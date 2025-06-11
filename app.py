@@ -180,5 +180,4 @@ def update_calculations(slider_values, selected_state):
     
     return problem_results, [total_text]
 
-if __name__ == '__main__':
-    app.run(debug=True, port=8053)
+server = app.server
