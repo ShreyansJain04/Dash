@@ -46,15 +46,32 @@ def calculate_state_summary(state):
         'highest_loss_reason': state_data.loc[state_data['Total Lost'].idxmax(), 'Lost Reason']
     }
 
+def convert_to_serializable(obj):
+    """Convert pandas/numpy types to JSON serializable types"""
+    if hasattr(obj, 'item'):  # numpy scalar
+        return obj.item()
+    elif hasattr(obj, 'tolist'):  # numpy array
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    else:
+        return obj
+
 def generate_export_data(state, calculations):
     """Generate export data for the current analysis"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return {
+    
+    # Convert all data to JSON-serializable format
+    export_data = {
         'timestamp': timestamp,
         'state': state,
         'analysis': calculations,
         'summary': calculate_state_summary(state)
     }
+    
+    return convert_to_serializable(export_data)
 
 # --- Enhanced App Setup ---
 app = dash.Dash(__name__, 
@@ -72,59 +89,60 @@ app.index_string = '''
         <title>{%title%}</title>
         {%favicon%}
         {%css%}
-        <style>
-            .metric-card {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border-radius: 15px;
-                padding: 20px;
-                margin: 10px 0;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-                transition: transform 0.3s ease;
-            }
-            .metric-card:hover {
-                transform: translateY(-5px);
-            }
-            .priority-section {
-                background: #f8f9ff;
-                border-radius: 15px;
-                padding: 20px;
-                margin: 15px 0;
-                border-left: 5px solid #667eea;
-            }
-            .result-card {
-                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                color: white;
-                border-radius: 15px;
-                padding: 20px;
-                margin: 10px 0;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            }
-            .total-summary {
-                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-                color: white;
-                border-radius: 20px;
-                padding: 25px;
-                margin: 20px 0;
-                text-align: center;
-                font-size: 1.5rem;
-                font-weight: bold;
-                box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-            }
-            .custom-slider .rc-slider-track {
-                background: linear-gradient(to right, #667eea, #764ba2);
-            }
-            .custom-slider .rc-slider-handle {
-                border: 3px solid #667eea;
-                background: white;
-            }
-            .header-gradient {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 30px 0;
-                margin-bottom: 30px;
-                border-radius: 0 0 20px 20px;
-            }
+                 <style>
+             .metric-card {
+                 background: linear-gradient(135deg, #2c5aa0 0%, #1e4078 100%);
+                 color: white;
+                 border-radius: 12px;
+                 padding: 20px;
+                 margin: 10px 0;
+                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                 transition: transform 0.2s ease;
+             }
+             .metric-card:hover {
+                 transform: translateY(-3px);
+             }
+             .priority-section {
+                 background: #f8fafc;
+                 border-radius: 12px;
+                 padding: 20px;
+                 margin: 15px 0;
+                 border-left: 5px solid #2c5aa0;
+                 border: 1px solid #e2e8f0;
+             }
+             .result-card {
+                 background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+                 color: white;
+                 border-radius: 12px;
+                 padding: 20px;
+                 margin: 10px 0;
+                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+             }
+             .total-summary {
+                 background: linear-gradient(135deg, #2c5aa0 0%, #1a365d 100%);
+                 color: white;
+                 border-radius: 16px;
+                 padding: 25px;
+                 margin: 20px 0;
+                 text-align: center;
+                 font-size: 1.5rem;
+                 font-weight: bold;
+                 box-shadow: 0 6px 20px rgba(44,90,160,0.25);
+             }
+             .custom-slider .rc-slider-track {
+                 background: linear-gradient(to right, #2c5aa0, #1e4078);
+             }
+             .custom-slider .rc-slider-handle {
+                 border: 3px solid #2c5aa0;
+                 background: white;
+             }
+             .header-gradient {
+                 background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+                 color: white;
+                 padding: 30px 0;
+                 margin-bottom: 30px;
+                 border-radius: 0 0 20px 20px;
+             }
         </style>
     </head>
     <body>
@@ -145,12 +163,12 @@ app.layout = dbc.Container([
         dbc.Container([
             dbc.Row([
                 dbc.Col([
-                    html.H1([
-                        html.I(className="fas fa-chart-line me-3"),
-                        "Smart Recovery Analytics Dashboard"
-                    ], className="mb-2"),
-                    html.P("AI-Powered State-wise Recovery Potential Analysis", 
-                           className="lead mb-0")
+                                         html.H1([
+                         html.I(className="fas fa-chart-line me-3"),
+                         "Recovery Analytics Dashboard"
+                     ], className="mb-2"),
+                     html.P("Strategic State-wise Recovery Potential Analysis", 
+                            className="lead mb-0")
                 ], width=8),
                 dbc.Col([
                     html.Div([
@@ -273,7 +291,7 @@ def update_state_overview(selected_state):
             x=priorities,
             y=priority_totals,
             name="Priority Distribution",
-            marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+            marker_color=['#dc3545', '#fd7e14', '#0d6efd', '#198754']
         ),
         row=1, col=2
     )
