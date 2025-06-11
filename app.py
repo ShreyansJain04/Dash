@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 import io
 import base64
+import xlsxwriter
+from io import BytesIO
 
 # --- Enhanced Data Setup ---
 data = {
@@ -72,6 +74,226 @@ def generate_export_data(state, calculations):
     }
     
     return convert_to_serializable(export_data)
+
+def create_excel_export(state, calculations_data):
+    """Create a professionally formatted Excel report"""
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        
+        # Define professional formats
+        title_format = workbook.add_format({
+            'bold': True,
+            'font_size': 16,
+            'font_color': '#1a202c',
+            'bg_color': '#e2e8f0',
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter'
+        })
+        
+        header_format = workbook.add_format({
+            'bold': True,
+            'font_size': 12,
+            'font_color': 'white',
+            'bg_color': '#2c5aa0',
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter'
+        })
+        
+        subheader_format = workbook.add_format({
+            'bold': True,
+            'font_size': 11,
+            'font_color': '#1a202c',
+            'bg_color': '#f8fafc',
+            'border': 1,
+            'align': 'left',
+            'valign': 'vcenter'
+        })
+        
+        data_format = workbook.add_format({
+            'font_size': 10,
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter'
+        })
+        
+        number_format = workbook.add_format({
+            'font_size': 10,
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter',
+            'num_format': '#,##0.0'
+        })
+        
+        percentage_format = workbook.add_format({
+            'font_size': 10,
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter',
+            'num_format': '0%'
+        })
+        
+        currency_format = workbook.add_format({
+            'font_size': 10,
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter',
+            'num_format': '#,##0.0" MT"'
+        })
+        
+        # 1. Executive Summary Sheet
+        summary_df = pd.DataFrame({
+            'Metric': [
+                'State',
+                'Analysis Date',
+                'Total Lost Customers',
+                'Average MT per Customer',
+                'Total Recovery Potential (MT/month)',
+                'Number of Problems Analyzed',
+                'Highest Impact Problem'
+            ],
+            'Value': [
+                state,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                calculate_state_summary(state)['total_lost'],
+                f"{avg_mt[state]} MT",
+                f"{calculations_data.get('total_mt', 0):.1f} MT/month",
+                len(calculations_data.get('problems', [])),
+                calculate_state_summary(state)['highest_loss_reason']
+            ]
+        })
+        
+        summary_df.to_excel(writer, sheet_name='Executive Summary', index=False, startrow=2)
+        summary_sheet = writer.sheets['Executive Summary']
+        
+        # Format Executive Summary
+        summary_sheet.merge_range('A1:B1', f'Recovery Analysis Report - {state}', title_format)
+        summary_sheet.write('A3', 'Metric', header_format)
+        summary_sheet.write('B3', 'Value', header_format)
+        
+        for row in range(len(summary_df)):
+            summary_sheet.write(row + 3, 0, summary_df.iloc[row, 0], subheader_format)
+            summary_sheet.write(row + 3, 1, summary_df.iloc[row, 1], data_format)
+        
+        summary_sheet.set_column('A:A', 25)
+        summary_sheet.set_column('B:B', 30)
+        
+        # 2. Detailed Analysis Sheet
+        analysis_data = []
+        for problem in calculations_data.get('problems', []):
+            for priority in problem['priorities']:
+                analysis_data.append({
+                    'Problem': problem['name'],
+                    'Priority Level': priority['priority'],
+                    'Lost Customers': priority['customers'],
+                    'Conversion Rate': priority['conversion_rate'] / 100,
+                    'Potential Customers': priority['potential_customers'],
+                    'Recovery Potential (MT)': priority['potential_mt'],
+                    'Problem Total (MT)': problem['total_mt']
+                })
+        
+        if analysis_data:
+            analysis_df = pd.DataFrame(analysis_data)
+            analysis_df.to_excel(writer, sheet_name='Detailed Analysis', index=False, startrow=2)
+            analysis_sheet = writer.sheets['Detailed Analysis']
+            
+            # Format Detailed Analysis
+            analysis_sheet.merge_range('A1:G1', 'Detailed Recovery Potential Analysis', title_format)
+            
+            headers = ['Problem', 'Priority Level', 'Lost Customers', 'Conversion Rate', 
+                      'Potential Customers', 'Recovery Potential (MT)', 'Problem Total (MT)']
+            
+            for col, header in enumerate(headers):
+                analysis_sheet.write(2, col, header, header_format)
+            
+            # Apply data formatting
+            for row in range(len(analysis_df)):
+                analysis_sheet.write(row + 3, 0, analysis_df.iloc[row, 0], data_format)  # Problem
+                analysis_sheet.write(row + 3, 1, analysis_df.iloc[row, 1], data_format)  # Priority
+                analysis_sheet.write(row + 3, 2, analysis_df.iloc[row, 2], data_format)  # Lost Customers
+                analysis_sheet.write(row + 3, 3, analysis_df.iloc[row, 3], percentage_format)  # Conversion Rate
+                analysis_sheet.write(row + 3, 4, analysis_df.iloc[row, 4], number_format)  # Potential Customers
+                analysis_sheet.write(row + 3, 5, analysis_df.iloc[row, 5], currency_format)  # Recovery Potential
+                analysis_sheet.write(row + 3, 6, analysis_df.iloc[row, 6], currency_format)  # Problem Total
+            
+            # Set column widths
+            analysis_sheet.set_column('A:A', 35)  # Problem
+            analysis_sheet.set_column('B:B', 15)  # Priority Level
+            analysis_sheet.set_column('C:C', 15)  # Lost Customers
+            analysis_sheet.set_column('D:D', 15)  # Conversion Rate
+            analysis_sheet.set_column('E:E', 18)  # Potential Customers
+            analysis_sheet.set_column('F:F', 20)  # Recovery Potential
+            analysis_sheet.set_column('G:G', 18)  # Problem Total
+        
+        # 3. Problem Summary Sheet
+        problem_summary_data = []
+        for problem in calculations_data.get('problems', []):
+            total_customers = sum(p['customers'] for p in problem['priorities'])
+            avg_conversion = sum(p['conversion_rate'] for p in problem['priorities']) / len(problem['priorities'])
+            
+            problem_summary_data.append({
+                'Problem': problem['name'],
+                'Total Lost Customers': total_customers,
+                'Average Conversion Rate': avg_conversion / 100,
+                'Recovery Potential (MT/month)': problem['total_mt'],
+                'Percentage of Total Recovery': problem['total_mt'] / calculations_data.get('total_mt', 1) if calculations_data.get('total_mt', 0) > 0 else 0
+            })
+        
+        if problem_summary_data:
+            problem_df = pd.DataFrame(problem_summary_data)
+            problem_df.to_excel(writer, sheet_name='Problem Summary', index=False, startrow=2)
+            problem_sheet = writer.sheets['Problem Summary']
+            
+            # Format Problem Summary
+            problem_sheet.merge_range('A1:E1', 'Problem-wise Recovery Summary', title_format)
+            
+            headers = ['Problem', 'Total Lost Customers', 'Average Conversion Rate', 
+                      'Recovery Potential (MT/month)', 'Percentage of Total Recovery']
+            
+            for col, header in enumerate(headers):
+                problem_sheet.write(2, col, header, header_format)
+            
+            # Apply data formatting
+            for row in range(len(problem_df)):
+                problem_sheet.write(row + 3, 0, problem_df.iloc[row, 0], data_format)
+                problem_sheet.write(row + 3, 1, problem_df.iloc[row, 1], data_format)
+                problem_sheet.write(row + 3, 2, problem_df.iloc[row, 2], percentage_format)
+                problem_sheet.write(row + 3, 3, problem_df.iloc[row, 3], currency_format)
+                problem_sheet.write(row + 3, 4, problem_df.iloc[row, 4], percentage_format)
+            
+            # Set column widths
+            problem_sheet.set_column('A:A', 35)
+            problem_sheet.set_column('B:B', 20)
+            problem_sheet.set_column('C:C', 22)
+            problem_sheet.set_column('D:D', 25)
+            problem_sheet.set_column('E:E', 28)
+        
+        # 4. Raw Data Sheet
+        state_data = df[df['State'] == state]
+        state_data.to_excel(writer, sheet_name='Raw Data', index=False, startrow=2)
+        raw_sheet = writer.sheets['Raw Data']
+        
+        # Format Raw Data
+        raw_sheet.merge_range('A1:H1', f'Raw Data for {state}', title_format)
+        
+        for col, header in enumerate(state_data.columns):
+            raw_sheet.write(2, col, header, header_format)
+        
+        for row in range(len(state_data)):
+            for col in range(len(state_data.columns)):
+                raw_sheet.write(row + 3, col, state_data.iloc[row, col], data_format)
+        
+        # Auto-adjust column widths for raw data
+        for col in range(len(state_data.columns)):
+            max_width = max(len(str(state_data.columns[col])), 
+                           max(len(str(state_data.iloc[row, col])) for row in range(len(state_data))))
+            raw_sheet.set_column(col, col, min(max_width + 2, 30))
+    
+    output.seek(0)
+    return output
 
 # --- Enhanced App Setup ---
 app = dash.Dash(__name__, 
@@ -532,30 +754,98 @@ def handle_export(export_clicks, close_clicks, calculations_data, selected_state
     
     if trigger_id == 'export-btn' and calculations_data:
         export_data = generate_export_data(selected_state, calculations_data)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Create download content
+        # Create JSON download
         json_string = json.dumps(export_data, indent=2)
-        encoded = base64.b64encode(json_string.encode()).decode()
+        json_encoded = base64.b64encode(json_string.encode()).decode()
+        
+        # Create Excel download
+        excel_buffer = create_excel_export(selected_state, calculations_data)
+        excel_encoded = base64.b64encode(excel_buffer.getvalue()).decode()
         
         download_content = [
-            html.H5("Export Successful!"),
-            html.P(f"Analysis for {selected_state} state ready for download."),
-            html.Hr(),
-            html.H6("Summary:"),
-            html.Ul([
-                html.Li(f"Total Recovery Potential: {calculations_data.get('total_mt', 0):.1f} MT/month"),
-                html.Li(f"Number of Problems Analyzed: {len(calculations_data.get('problems', []))}"),
-                html.Li(f"Export Time: {export_data['timestamp']}")
-            ]),
-            html.Hr(),
-            html.A(
-                dbc.Button([
-                    html.I(className="fas fa-download me-2"),
-                    "Download JSON Report"
-                ], color="primary", size="lg"),
-                href=f"data:application/json;charset=utf-8;base64,{encoded}",
-                download=f"recovery_analysis_{selected_state}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            )
+            html.Div([
+                html.I(className="fas fa-check-circle text-success me-2", style={'fontSize': '24px'}),
+                html.H4("Export Ready!", className="text-success d-inline")
+            ], className="mb-3"),
+            
+            html.P(f"Professional analysis report for {selected_state} state is ready for download.", 
+                   className="lead"),
+            
+            dbc.Card([
+                dbc.CardBody([
+                    html.H6("📊 Analysis Summary:", className="mb-3"),
+                    dbc.Row([
+                        dbc.Col([
+                            html.Strong("Total Recovery Potential:"),
+                            html.Br(),
+                            html.Span(f"{calculations_data.get('total_mt', 0):.1f} MT/month", 
+                                     className="text-primary fs-5")
+                        ], md=6),
+                        dbc.Col([
+                            html.Strong("Problems Analyzed:"),
+                            html.Br(),
+                            html.Span(f"{len(calculations_data.get('problems', []))}", 
+                                     className="text-info fs-5")
+                        ], md=6)
+                    ])
+                ])
+            ], className="mb-4", color="light"),
+            
+            html.H6("📁 Download Options:", className="mb-3"),
+            
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            html.Div([
+                                html.I(className="fas fa-file-excel text-success", 
+                                      style={'fontSize': '48px'}),
+                                html.H5("Excel Report", className="mt-2"),
+                                html.P("Professional formatted spreadsheet with multiple sheets", 
+                                      className="text-muted small"),
+                                html.A(
+                                    dbc.Button([
+                                        html.I(className="fas fa-download me-2"),
+                                        "Download Excel"
+                                    ], color="success", block=True),
+                                    href=f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_encoded}",
+                                    download=f"recovery_analysis_{selected_state}_{timestamp}.xlsx"
+                                )
+                            ], className="text-center")
+                        ])
+                    ], className="h-100")
+                ], md=6),
+                
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            html.Div([
+                                html.I(className="fas fa-file-code text-primary", 
+                                      style={'fontSize': '48px'}),
+                                html.H5("JSON Data", className="mt-2"),
+                                html.P("Raw data format for integration and analysis", 
+                                      className="text-muted small"),
+                                html.A(
+                                    dbc.Button([
+                                        html.I(className="fas fa-download me-2"),
+                                        "Download JSON"
+                                    ], color="primary", block=True),
+                                    href=f"data:application/json;charset=utf-8;base64,{json_encoded}",
+                                    download=f"recovery_analysis_{selected_state}_{timestamp}.json"
+                                )
+                            ], className="text-center")
+                        ])
+                    ], className="h-100")
+                ], md=6)
+            ], className="g-3"),
+            
+            html.Hr(className="my-4"),
+            html.Small([
+                html.I(className="fas fa-info-circle me-1"),
+                f"Reports generated on {export_data['timestamp']}"
+            ], className="text-muted")
         ]
         
         return True, download_content
